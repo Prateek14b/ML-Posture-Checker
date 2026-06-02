@@ -14,7 +14,6 @@ export default function App(){
   const [feedback, setFeedback] = useState([]); //list of specific issues e.g: ["neck too forward"]
   const [angles, setAngles] = useState({}); //raw angle values to display
   const cameraRef = useRef(null); //holds MediaPipe camera instance so we can stop it 
-}
   //from here on, all marked points on the body's canvas
   //are IN COORDINATE AXIS. So, they have an x and y component.
 
@@ -45,7 +44,7 @@ export default function App(){
     //neck angle - angle b/w ear & shoulder 
     //if head is forward, angle rises!
 
-    const NeckAngle = calculateAngle(
+    const neckAngle = calculateAngle(
       {x: (leftEar.x + rightEar.x) / 2, y: (leftEar.y + rightEar.y) / 2},
       {x: (leftShoulder.x + rightShoulder.x) / 2, y: (leftShoulder.y + rightShoulder.y) / 2}
     );
@@ -122,9 +121,9 @@ export default function App(){
       height: 480,
     });
 
-    camera.start();
+    camera.start(); //begins the camera instantiation that pipes in frames continuously to the Pose object.
     cameraRef.current=camera;
-    setStarted(true);
+    setStarted(true); 
   }
 
   function stopCamera() { //this is run when user clicks on the camera button to disable webcam.
@@ -139,22 +138,87 @@ export default function App(){
     setAngles({});
   }
 
+  // --UI helpers ------
+
+  const riskColors = {
+    low: "bg-green-100 border-green-400 text-green-800",
+    medium: "bg-yellow-100 border-yellow-400 text-yellow-800",
+    high: "bg-red-100 border-red-400 text-red-800",
+  };
+
+  const riskLabels = {
+    low: "✅ Low risk",
+    medium: "⚠️ Medium risk",
+    high: "🔴 High risk",
+  };
+
+  // -----TAILWIND CSS FOR STYLING AND HTML FOR DEFINING DOM OBJECTS, per page re-render ------------
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center py-10 px-4">
+      <h1 className="text-3xl font-bold mb-2">👨‍💻 Posture Checker</h1>
+      <p className="text-gray-400 mb-8">Sit in front of your webcam and get real-time posture feedback</p>
+
+      {/* ── Webcam / Canvas ── */}
+      <div className="relative mb-6">
+        {/* Hidden video element — MediaPipe reads from this */}
+        <video ref={videoRef} className="hidden" />
+
+        {/* Canvas is what the user actually sees — video frame + skeleton overlay */}
+        <canvas
+          ref={canvasRef}
+          width={640}
+          height={480}
+          className="rounded-2xl border border-gray-700 shadow-xl"
+        />
+
+        {/* Placeholder when camera is off */}
+        {!started && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 rounded-2xl">
+            <p className="text-gray-500">Camera is off</p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Start / Stop button ── */}
+      <button
+        onClick={started ? stopCamera : startCamera}
+        className={`px-6 py-3 rounded-xl font-semibold text-white mb-8 transition
+          ${started ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
+      >
+        {started ? "Stop Camera" : "Start Camera"}
+      </button>
+
+      {/* ── Posture feedback card ── */}
+      {posture && (
+        <div className={`w-full max-w-md border rounded-2xl p-6 mb-6 ${riskColors[posture]}`}>
+          <p className="text-xl font-bold mb-3">{riskLabels[posture]}</p>
+          {feedback.length === 0 ? (
+            <p>Keep it up! Your posture looks great.</p>
+          ) : (
+            <ul className="list-disc list-inside space-y-1">
+              {feedback.map((issue, i) => <li key={i}>{issue}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* ── Raw angle values ── */}
+      {Object.keys(angles).length > 0 && (
+        <div className="w-full max-w-md bg-gray-900 rounded-2xl p-6 border border-gray-700">
+          <p className="text-sm font-semibold text-gray-400 mb-3">Raw measurements</p>
+          <div className="flex gap-6">
+            <div>
+              <p className="text-xs text-gray-500">Neck angle</p>
+              <p className="text-2xl font-bold">{angles.neckAngle}°</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Shoulder diff</p>
+              <p className="text-2xl font-bold">{angles.shoulderDiff}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
