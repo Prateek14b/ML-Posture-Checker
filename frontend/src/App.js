@@ -3,7 +3,7 @@ import './App.css';
 import {useRef, useEffect, useState} from "react";
 import {Pose} from "@mediapipe/pose";
 import {Camera} from "@mediapipe/camera_utils";
-import {drawConnectors, drawLadmarks} from "@mediapipe/drawing_utils"
+import {drawConnectors, drawLandmarks} from "@mediapipe/drawing_utils"
 import {POSE_CONNECTIONS} from "@mediapipe/pose";
 
 export default function App(){
@@ -57,14 +57,87 @@ export default function App(){
     if (shoulderDiff > 3) issues.push("Shoulders uneven");
 
     let risk;
-    if (issues.length===0) risk="low-risk";
-    else if (shoulderDiff in Range(0,3) && neckAngle in Range(0,20)) risk="medium-risk"
-    else risk="high-risk"
+
+    if (neckAngle < 15 && shoulderDiff < 1) {
+        risk = "low-risk";
+    }
+    else if (
+        (neckAngle >= 15 && neckAngle <= 20) ||
+        (shoulderDiff >= 1 && shoulderDiff <= 3)
+    ) {
+        risk = "medium-risk";
+    }
+    else {
+        risk = "high-risk";
+    }
 
     return { risk, issues, angles: {neckAngle: neckAngle.toFixed(1), shoulderDiff: shoulderDiff.toFixed(1)}}; //toFixed(int) is the js equivalent of typecasting int to str, and to a specific number of dp as specified by the value within brackets(1, in this case).
   }
 
 
+  //constructor to initialise Camera object to draw in webcam feed's frames into Pose object. this is a predefined async function, that waits to hear back if webcam captured new frame via the internal promise function 'pose.send(image: videoElement)
+  //constructor to initialise MediaPipe Pose object, which returns coordinate list called postlandmarks. if poselandmarks array exists, then draw canvas appropriately and run our helper functions to set states for feedback, angles, and issues objects!
+
+  //then we encapsulate this entire process within a function because all of this is a sequential set of tasks that must all run FOR EVERY SINGLE CAPTURED FRAME.
+  //so, overall, the workflow goes like webcame frame captured by Camera object, then this function runs to produce results, and repeat until camera object's state is closed.
+  function startCamera() { 
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+
+    pose.setOptions({
+      modelComplexity: 2, 
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    pose.onResults((results) => { //this callback only fires if the internal 'results' object is populated with the 33 landmark coordinates.
+      //now we define what to do if our promise is true and we do have coordinates in our hands; we do 2 things in this case: redraw the canvas with the coordinates so its visible to the user AND mainly classify posture and issues based on our helper functions' logic from earlier.
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+
+      //clear canvas and draw current video frame onto it first.
+      ctx.clearRect(0,0,canvas.width, canvas.height);
+      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height); //im assuming this results objects also contains the canvas image
+
+      if (results.poseLandmarks) { //just a guard so that we only proceed if the coordinate list is present in the results object.
+        //first we draw the skeleton overlay on top of the video frame on canvas
+        drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {color: "#00ff00", lineWidth: 2});
+        drawLandmarks(ctx, results.poseLandmarks, { color: "#ff0000", lineWidth: 1, radius: 3});
+
+        //now finally we update states of feedback and posture classification objects based on our helper function.
+        const { risk, issues, angles}=classifyPosture(results.poseLandmarks);
+        setPosture(risk);
+        setFeedback(issues);
+        setAngles(angles);
+      }
+    });
+
+    const camera = new Camera(videoRef.current, { //the Camera object's job is to pipe in the webcam frame into the Pose processing above. Since the Camera class has a callback function that depends on whether a new frame was captured by the webcam, that means as long as the user keeps the webcam running, this runs continuously per new frame like a loop!
+      onFrame: async () => {
+        await pose.send({image: videoRef.current});
+      },
+      width: 640,
+      height: 480,
+    });
+
+    camera.start();
+    cameraRef.current=camera;
+    setStarted(true);
+  }
+
+  function stopCamera() { //this is run when user clicks on the camera button to disable webcam.
+    if (cameraRef.current) {
+      cameraRef.current.stop();
+      cameraRef.current = null;
+    }
+
+    setStarted(false);
+    setPosture(null);
+    setFeedback([]);
+    setAngles({});
+  }
 
   return (
     <div className="App">
